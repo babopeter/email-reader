@@ -7,7 +7,6 @@ def read_msg_file(file_path):
         return
 
     msg = extract_msg.Message(file_path)
-    msg.extract()  # Prepares attachments and other properties
 
     print("=== Email Information ===")
     print("Subject:", msg.subject)
