@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload EML File</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .upload-container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+            margin-top: 50px;
+        }
+        .file-drop-area {
+            border: 2px dashed #007bff;
+            padding: 40px;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color .2s ease;
+        }
+        .file-drop-area:hover {
+            background-color: #e9f5ff;
+        }
+        .file-drop-area.highlight {
+            background-color: #cce5ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-8 col-lg-6">
+                <div class="upload-container">
+                    <h2 class="text-center mb-4">Upload EML File</h2>
+                    {% with messages = get_flashed_messages() %}
+                        {% if messages %}
+                            <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                                {% for message in messages %}
+                                    {{ message }}
+                                {% endfor %}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {% endif %}
+                    {% endwith %}
+                    <form method="post" enctype="multipart/form-data" action="{{ url_for('index') }}" id="uploadForm">
+                        <div class="mb-3">
+                            <label for="fileInput" class="form-label visually-hidden">Choose EML File</label>
+                            <div class="file-drop-area" id="fileDropArea">
+                                <p class="lead">Drag & drop your .eml or .msg file here, or click to select</p>
+                                <input type="file" class="form-control d-none" id="fileInput" name="file" accept=".eml,.msg">
+                                <button type="button" class="btn btn-primary mt-3" onclick="document.getElementById('fileInput').click();">Select File</button>
+                                <div id="fileNameDisplay" class="mt-2 text-muted"></div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">Upload and View</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const fileDropArea = document.getElementById('fileDropArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const uploadForm = document.getElementById('uploadForm');
+
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            fileDropArea.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false); // For preventing outside the drop area
+        });
+
+        function preventDefaults (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight drop area when dragging over
+        ['dragenter', 'dragover'].forEach(eventName => {
+            fileDropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            fileDropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            fileDropArea.classList.add('highlight');
+        }
+
+        function unhighlight(e) {
+            fileDropArea.classList.remove('highlight');
+        }
+
+        // Handle dropped files
+        fileDropArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            
+            if (files.length > 0) {
+                fileInput.files = files;
+                updateFileNameDisplay();
+            }
+        }
+
+        // Update file name display when file is selected via input or drag-drop
+        fileInput.addEventListener('change', updateFileNameDisplay);
+
+        function updateFileNameDisplay() {
+            if (fileInput.files.length > 0) {
+                fileNameDisplay.textContent = `Selected file: ${fileInput.files[0].name}`;
+            } else {
+                fileNameDisplay.textContent = '';
+            }
+        }
+    </script>
+</body>
+</html>
