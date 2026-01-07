@@ -31,6 +31,9 @@ A Flask-based web application to view `.eml` and `.msg` email files in a browser
 2.  **Access the application:**
     Open your web browser and navigate to `http://127.0.0.1:5000/`.
 
+## Acknowledgements
+This project was developed with the assistance of the Google Gemini CLI.
+
 ## TODO
 
 - [ ] Implement rendering images inline with the text (e.g., handling `cid:` references for embedded images).
