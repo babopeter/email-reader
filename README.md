@@ -36,4 +36,5 @@ This project was developed with the assistance of the Google Gemini CLI.
 
 ## TODO
 
-- [ ] Implement rendering images inline with the text (e.g., handling `cid:` references for embedded images).
+- [x] Implement rendering images inline with the text (e.g., handling `cid:` references for embedded images).
+- [ ] Dockerize the application
