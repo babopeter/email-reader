@@ -1,3 +1,4 @@
 Flask
 bleach
 extract-msg
+pywebview

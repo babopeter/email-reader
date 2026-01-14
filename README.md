@@ -24,12 +24,33 @@ A Flask-based web application to view `.eml` and `.msg` email files in a browser
 
 ## Usage
 
+### Development Mode (Browser-based)
+
 1.  **Run the application:**
     ```bash
-    nohup ./.venv/bin/python app.py > app.log 2>&1 &
+    source ./.venv/bin/activate
+    python app.py
     ```
 2.  **Access the application:**
     Open your web browser and navigate to `http://127.0.0.1:5000/`.
+
+### macOS App (Native Window)
+
+1.  **Install build dependencies** (one-time setup):
+    ```bash
+    source ./.venv/bin/activate
+    pip install pyinstaller
+    ```
+
+2.  **Build the macOS app:**
+    ```bash
+    pyinstaller --noconfirm --windowed --name "Email Reader" --add-data "templates:templates" --add-data "static:static" run_app.py
+    ```
+
+3.  **Run the app:**
+    - Open `dist/Email Reader.app` in Finder (or via Spotlight)
+    - The app will open in a native macOS window
+    - Uploads are stored in `~/Library/Application Support/EmailReader/uploads`
 
 ## Acknowledgements
 This project was developed with the assistance of the Google Gemini CLI.

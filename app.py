@@ -1,4 +1,5 @@
 import os
+import sys
 import uuid
 import email
 from email import policy
@@ -8,9 +9,32 @@ from flask import Flask, render_template, request, redirect, url_for, send_from_
 from werkzeug.utils import secure_filename
 import bleach
 
-app = Flask(__name__)
+# Handle PyInstaller bundled app - templates/static are in the bundle
+if getattr(sys, 'frozen', False):
+    # Running as a bundled app
+    template_folder = os.path.join(sys._MEIPASS, 'templates')
+    static_folder = os.path.join(sys._MEIPASS, 'static')
+    app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
+else:
+    # Running normally
+    app = Flask(__name__)
 app.secret_key = 'supersecretkey'  # Required for session/flash
-app.config['UPLOAD_FOLDER'] = 'uploads'
+
+# Configure upload folder - use user-writable location for bundled apps
+if getattr(sys, 'frozen', False):
+    # Running as bundled app - use Application Support directory
+    base_dir = os.path.join(
+        os.path.expanduser("~"),
+        "Library",
+        "Application Support",
+        "EmailReader",
+    )
+    upload_dir = os.path.join(base_dir, "uploads")
+    app.config['UPLOAD_FOLDER'] = upload_dir
+else:
+    # Running normally - use local uploads directory
+    app.config['UPLOAD_FOLDER'] = 'uploads'
+
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB limit
 
 ALLOWED_EXTENSIONS = {'eml', 'msg'}
