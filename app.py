@@ -2,6 +2,7 @@ import os
 import uuid
 import email
 from email import policy
+import re
 import extract_msg
 from flask import Flask, render_template, request, redirect, url_for, send_from_directory, flash
 from werkzeug.utils import secure_filename
@@ -19,6 +20,26 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def replace_cid_urls(html_content, cid_map):
+    """
+    Replace cid: URLs in the HTML with real URLs pointing to saved attachments.
+    Expects cid_map keys to be the raw CID value without angle brackets, e.g. "image001.png@01D...".
+    """
+    if not html_content or not cid_map:
+        return html_content
+
+    def _repl(match):
+        cid = match.group(1)
+        replacement = cid_map.get(cid)
+        if not replacement:
+            # Try again without surrounding whitespace just in case
+            cid_stripped = cid.strip()
+            replacement = cid_map.get(cid_stripped)
+        return f'src="{replacement}"' if replacement else match.group(0)
+
+    # src="cid:something" or src='cid:something'
+    return re.sub(r'src=[\'"]cid:(.+?)[\'"]', _repl, html_content, flags=re.IGNORECASE)
 
 def clean_html(html_content):
     # Allow common tags and attributes for email rendering
@@ -87,6 +108,9 @@ def view_email(upload_id, filename):
         'attachments': []
     }
 
+    # Map of Content-ID (without angle brackets) -> public URL for that attachment
+    cid_map = {}
+
     file_ext = filename.rsplit('.', 1)[1].lower()
 
     if file_ext == 'msg':
@@ -97,6 +121,30 @@ def view_email(upload_id, filename):
             email_data['to'] = msg.to if msg.to else '(No Recipient)'
             email_data['date'] = msg.date if msg.date else '(Unknown Date)'
 
+            # Extract Attachments (and build CID map for inline images, if available)
+            for attachment in msg.attachments:
+                fname = attachment.getFilename()
+                if fname:
+                    fname = secure_filename(fname)
+                    att_path = os.path.join(upload_dir, fname)
+                    
+                    if not os.path.exists(att_path):
+                        with open(att_path, 'wb') as f:
+                            f.write(attachment.data)
+
+                    url = url_for('download_attachment', upload_id=upload_id, filename=fname)
+
+                    # Some extract_msg versions expose Content-ID via .cid or .contentId
+                    cid = getattr(attachment, 'cid', None) or getattr(attachment, 'contentId', None)
+                    if cid:
+                        cid = cid.strip('<>')
+                        cid_map[cid] = url
+                    
+                    email_data['attachments'].append({
+                        'filename': fname,
+                        'url': url
+                    })
+
             # Extract Body
             body_content = ""
             print(f"MSG htmlBody type: {type(msg.htmlBody)}", flush=True)
@@ -105,9 +153,14 @@ def view_email(upload_id, filename):
                 try:
                     raw_html = msg.htmlBody.decode('utf-8', errors='ignore') if isinstance(msg.htmlBody, bytes) else msg.htmlBody
                     print(f"MSG HTML Body (len={len(raw_html)})", flush=True)
-                    body_content = clean_html(raw_html)
-                    print(f"Cleaned MSG Body (len={len(body_content)})", flush=True)
-                    print(f"Cleaned MSG Snippet: {body_content[:1000]}", flush=True)
+
+                    # Replace cid: URLs so inline images load from our server.
+                    # We intentionally do NOT sanitize the HTML further here because the
+                    # original CSS/positioning is needed to keep annotations (e.g. circles)
+                    # aligned with images. Security is still provided by the sandboxed iframe.
+                    body_content = replace_cid_urls(raw_html, cid_map)
+                    print(f"Rendered MSG Body (len={len(body_content)})", flush=True)
+                    print(f"Rendered MSG Snippet: {body_content[:1000]}", flush=True)
                 except Exception as e:
                     print(f"Error processing MSG HTML: {e}", flush=True)
                     body_content = f"<p>Error decoding HTML body: {e}</p>"
@@ -120,22 +173,6 @@ def view_email(upload_id, filename):
                 body_content = "<p>(No readable body found)</p>"
             
             email_data['body'] = body_content
-
-            # Extract Attachments
-            for attachment in msg.attachments:
-                fname = attachment.getFilename()
-                if fname:
-                    fname = secure_filename(fname)
-                    att_path = os.path.join(upload_dir, fname)
-                    
-                    if not os.path.exists(att_path):
-                        with open(att_path, 'wb') as f:
-                            f.write(attachment.data)
-                    
-                    email_data['attachments'].append({
-                        'filename': fname,
-                        'url': url_for('download_attachment', upload_id=upload_id, filename=fname)
-                    })
             msg.close()
 
         except Exception as e:
@@ -153,34 +190,7 @@ def view_email(upload_id, filename):
         email_data['to'] = msg.get('to', '(No Recipient)')
         email_data['date'] = msg.get('date', '(Unknown Date)')
 
-        # Extract Body
-        body_content = ""
-        # Prefer HTML, fallback to plain text
-        body_part = msg.get_body(preferencelist=('html', 'plain'))
-
-        if body_part:
-            try:
-                content = body_part.get_content()
-                if body_part.get_content_type() == 'text/html':
-                    print(f"EML HTML Body (len={len(content)})", flush=True)
-                    body_content = clean_html(content)
-                    print(f"Cleaned EML Body (len={len(body_content)})", flush=True)
-                    print(f"Cleaned EML Snippet: {body_content[:1000]}", flush=True)
-                else:
-                    print("EML body is TEXT/PLAIN", flush=True)
-                    # Convert newlines to <br> for plain text
-                    cleaned_text = bleach.clean(content)
-                    body_content = f'<div style="white-space: pre-wrap;">{cleaned_text}</div>'
-            except Exception as e:
-                print(f"EML Body Error: {e}", flush=True)
-                body_content = f"<p>Error decoding body: {e}</p>"
-        else:
-            print("EML has NO body part found via get_body()", flush=True)
-            body_content = "<p>(No readable body found)</p>"
-
-        email_data['body'] = body_content
-
-        # Extract Attachments
+        # Extract Attachments (and build CID map for inline images)
         for part in msg.iter_attachments():
             fname = part.get_filename()
             if fname:
@@ -198,10 +208,49 @@ def view_email(upload_id, filename):
                         with open(att_path, 'w') as f:
                             f.write(payload)
 
+                url = url_for('download_attachment', upload_id=upload_id, filename=fname)
+
+                # Attachments that correspond to inline images should have a Content-ID header
+                cid_header = part.get('Content-ID')
+                if cid_header:
+                    cid_value = cid_header.strip('<>')
+                    cid_map[cid_value] = url
+
                 email_data['attachments'].append({
                     'filename': fname,
-                    'url': url_for('download_attachment', upload_id=upload_id, filename=fname)
+                    'url': url
                 })
+
+        # Extract Body
+        body_content = ""
+        # Prefer HTML, fallback to plain text
+        body_part = msg.get_body(preferencelist=('html', 'plain'))
+
+        if body_part:
+            try:
+                content = body_part.get_content()
+                if body_part.get_content_type() == 'text/html':
+                    print(f"EML HTML Body (len={len(content)})", flush=True)
+
+                    # Replace cid: URLs with real attachment URLs.
+                    # We keep the original HTML/CSS so any relative positioning used
+                    # for annotations (e.g. circles over screenshots) is preserved.
+                    body_content = replace_cid_urls(content, cid_map)
+                    print(f"Rendered EML Body (len={len(body_content)})", flush=True)
+                    print(f"Rendered EML Snippet: {body_content[:1000]}", flush=True)
+                else:
+                    print("EML body is TEXT/PLAIN", flush=True)
+                    # Convert newlines to <br> for plain text
+                    cleaned_text = bleach.clean(content)
+                    body_content = f'<div style="white-space: pre-wrap;">{cleaned_text}</div>'
+            except Exception as e:
+                print(f"EML Body Error: {e}", flush=True)
+                body_content = f"<p>Error decoding body: {e}</p>"
+        else:
+            print("EML has NO body part found via get_body()", flush=True)
+            body_content = "<p>(No readable body found)</p>"
+
+        email_data['body'] = body_content
 
     return render_template('view_email.html', email=email_data)
 
